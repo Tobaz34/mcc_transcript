@@ -65,6 +65,9 @@ class MeetingAssistantApp(ctk.CTk):
         # Verification au demarrage
         self.after(500, self._check_prerequisites)
 
+        # Demarrer le monitoring audio (VU-metres en permanence)
+        self.after(1000, self._start_monitoring)
+
         # Boucle de traitement de la queue
         self._process_queue()
 
@@ -183,6 +186,20 @@ class MeetingAssistantApp(ctk.CTk):
         else:
             self._status_bar.set_status("Pret", "#4CAF50")
 
+    # --- Monitoring audio ---
+
+    def _start_monitoring(self):
+        """Demarre le monitoring audio pour les VU-metres."""
+        self._recorder.start_monitoring()
+        self._update_monitoring_levels()
+
+    def _update_monitoring_levels(self):
+        """Met a jour les VU-metres en mode monitoring (avant enregistrement)."""
+        if self._recorder.is_monitoring:
+            mic_lvl, sys_lvl = self._recorder.get_levels()
+            self._frames["record"].update_levels(mic_lvl, sys_lvl)
+            self.after(LEVEL_UPDATE_INTERVAL_MS, self._update_monitoring_levels)
+
     # --- Enregistrement ---
 
     def _on_start_recording(self, session_name: str):
@@ -220,6 +237,9 @@ class MeetingAssistantApp(ctk.CTk):
         mic_path, loopback_path = self._recorder.stop_recording()
         self._frames["record"].set_recording_state(False)
         self._frames["record"].set_status("Traitement en cours...", "#FF9800")
+
+        # Relancer le monitoring pour les VU-metres
+        self.after(500, self._start_monitoring)
 
         if mic_path and loopback_path:
             # Lancer le pipeline en arriere-plan
@@ -408,6 +428,8 @@ class MeetingAssistantApp(ctk.CTk):
 
     def on_closing(self):
         """Nettoyage a la fermeture."""
+        if self._recorder.is_monitoring:
+            self._recorder.stop_monitoring()
         if self._recorder.is_recording:
             self._recorder.stop_recording()
         self._device_manager.terminate()

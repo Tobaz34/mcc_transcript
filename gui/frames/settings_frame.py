@@ -358,7 +358,8 @@ class SettingsFrame(ctk.CTkFrame):
                 self.after(0, lambda: self._on_pull_done(
                     model, False, "Ollama n'est pas installe. Installez-le depuis ollama.com"))
             except Exception as e:
-                self.after(0, lambda: self._on_pull_done(model, False, str(e)))
+                err_msg = str(e)
+                self.after(0, lambda m=err_msg: self._on_pull_done(model, False, m))
 
         threading.Thread(target=worker, daemon=True).start()
 

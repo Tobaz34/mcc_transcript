@@ -29,6 +29,7 @@ class DualStreamRecorder:
         self._mic_writer: Optional[wave.Wave_write] = None
         self._loopback_writer: Optional[wave.Wave_write] = None
         self._is_recording = False
+        self._is_monitoring = False
         self._lock = threading.Lock()
         self._start_time: float = 0.0
 
@@ -42,11 +43,97 @@ class DualStreamRecorder:
         self._loopback_rate: int = 0
         self._loopback_channels: int = 0
 
+    def start_monitoring(self) -> bool:
+        """Demarre le monitoring audio (niveaux seulement, sans enregistrer)."""
+        if self._is_recording or self._is_monitoring:
+            return False
+        try:
+            self._pa = pyaudio.PyAudio()
+
+            mic_device = self._get_mic_device()
+            if mic_device:
+                self._mic_rate = int(mic_device["defaultSampleRate"])
+                self._mic_channels = min(mic_device["maxInputChannels"], 1) or 1
+                self._mic_stream = self._pa.open(
+                    format=pyaudio.paInt16,
+                    channels=self._mic_channels,
+                    rate=self._mic_rate,
+                    input=True,
+                    input_device_index=mic_device["index"],
+                    frames_per_buffer=self._settings.chunk_size,
+                    stream_callback=self._monitor_callback_mic,
+                )
+
+            loopback_device = self._get_loopback_device()
+            if loopback_device:
+                self._loopback_rate = int(loopback_device["defaultSampleRate"])
+                self._loopback_channels = loopback_device["maxInputChannels"]
+                self._loopback_stream = self._pa.open(
+                    format=pyaudio.paInt16,
+                    channels=self._loopback_channels,
+                    rate=self._loopback_rate,
+                    input=True,
+                    input_device_index=loopback_device["index"],
+                    frames_per_buffer=self._settings.chunk_size,
+                    stream_callback=self._monitor_callback_lb,
+                )
+
+            self._is_monitoring = True
+            logger.info("Monitoring audio demarre")
+            return True
+        except Exception as e:
+            logger.warning("Impossible de demarrer le monitoring: %s", e)
+            self._close_streams()
+            return False
+
+    def stop_monitoring(self) -> None:
+        """Arrete le monitoring audio."""
+        if not self._is_monitoring:
+            return
+        self._is_monitoring = False
+        self._close_streams()
+        self._mic_level = 0.0
+        self._loopback_level = 0.0
+
+    def _monitor_callback_mic(self, in_data, frame_count, time_info, status):
+        self._mic_level = self._compute_rms_level(in_data)
+        return (None, pyaudio.paContinue)
+
+    def _monitor_callback_lb(self, in_data, frame_count, time_info, status):
+        self._loopback_level = self._compute_rms_level(in_data)
+        return (None, pyaudio.paContinue)
+
+    def _close_streams(self):
+        """Ferme les streams audio."""
+        for stream in (self._mic_stream, self._loopback_stream):
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
+        self._mic_stream = None
+        self._loopback_stream = None
+        if self._pa is not None:
+            try:
+                self._pa.terminate()
+            except Exception:
+                pass
+            self._pa = None
+
+    @property
+    def is_monitoring(self) -> bool:
+        return self._is_monitoring
+
     def start_recording(self, output_dir: Path) -> None:
         """Demarre l'enregistrement des deux flux audio."""
         with self._lock:
             if self._is_recording:
                 raise RuntimeError("Enregistrement deja en cours")
+
+            # Arreter le monitoring s'il tourne
+            if self._is_monitoring:
+                self.stop_monitoring()
 
             output_dir.mkdir(parents=True, exist_ok=True)
             self._pa = pyaudio.PyAudio()
