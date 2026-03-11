@@ -42,6 +42,7 @@ class Transcriber:
         self._compute_type = compute_type
         self._models_dir = models_dir
         self._model = None
+        self._actual_device = None
 
     def load_model(self) -> None:
         """Charge le modele faster-whisper."""
@@ -50,12 +51,18 @@ class Transcriber:
         if self._device == "auto":
             # Tenter CUDA d'abord, fallback sur CPU
             try:
-                self._model = WhisperModel(
+                model = WhisperModel(
                     self._model_size,
                     device="cuda",
                     compute_type=self._compute_type,
                     download_root=self._models_dir,
                 )
+                # Test rapide pour verifier que CUDA fonctionne vraiment
+                import numpy as np
+                test_audio = np.zeros(16000, dtype=np.float32)
+                list(model.transcribe(test_audio, language="fr")[0])
+                self._model = model
+                self._actual_device = "cuda"
                 logger.info("Modele Whisper %s charge sur GPU (CUDA)", self._model_size)
                 return
             except Exception as e:
@@ -70,26 +77,67 @@ class Transcriber:
             compute_type=compute,
             download_root=self._models_dir,
         )
+        self._actual_device = device
         logger.info("Modele Whisper %s charge sur %s (%s)", self._model_size, device, compute)
 
+    def _reload_on_cpu(self):
+        """Recharge le modele sur CPU en cas d'erreur CUDA."""
+        logger.warning("Rechargement du modele Whisper sur CPU...")
+        from faster_whisper import WhisperModel
+        self._model = WhisperModel(
+            self._model_size,
+            device="cpu",
+            compute_type="int8",
+            download_root=self._models_dir,
+        )
+        self._actual_device = "cpu"
+        logger.info("Modele Whisper %s recharge sur CPU (int8)", self._model_size)
+
     def transcribe(self, audio_path: Path, language: str = "fr",
-                   on_progress: Optional[Callable[[float], None]] = None) -> TranscriptionResult:
-        """Transcrit un fichier WAV et retourne les segments avec timestamps."""
+                   on_progress: Optional[Callable[[float], None]] = None,
+                   use_vad: bool = True) -> TranscriptionResult:
+        """Transcrit un fichier WAV et retourne les segments avec timestamps.
+
+        Args:
+            use_vad: Active le filtre VAD. Mettre a False pour les petits morceaux
+                     (transcription en direct) car le VAD peut supprimer tout l'audio.
+        """
         if self._model is None:
             raise RuntimeError("Le modele n'est pas charge. Appelez load_model() d'abord.")
 
-        logger.info("Transcription de %s...", audio_path.name)
+        logger.info("Transcription de %s (vad=%s)...", audio_path.name, use_vad)
 
-        segments_gen, info = self._model.transcribe(
-            str(audio_path),
+        try:
+            return self._do_transcribe(audio_path, language, on_progress, use_vad)
+        except RuntimeError as e:
+            err_str = str(e).lower()
+            if "cublas" in err_str or "cuda" in err_str or "library" in err_str:
+                logger.warning("Erreur CUDA pendant la transcription: %s", e)
+                self._reload_on_cpu()
+                return self._do_transcribe(audio_path, language, on_progress, use_vad)
+            raise
+
+    def _do_transcribe(self, audio_path: Path, language: str,
+                       on_progress: Optional[Callable[[float], None]],
+                       use_vad: bool = True) -> TranscriptionResult:
+        """Execute la transcription."""
+        transcribe_kwargs = dict(
             language=language,
             beam_size=5,
             word_timestamps=True,
-            vad_filter=True,
-            vad_parameters=dict(
+        )
+        if use_vad:
+            transcribe_kwargs["vad_filter"] = True
+            transcribe_kwargs["vad_parameters"] = dict(
                 min_silence_duration_ms=500,
                 speech_pad_ms=200,
-            ),
+            )
+        else:
+            transcribe_kwargs["vad_filter"] = False
+
+        segments_gen, info = self._model.transcribe(
+            str(audio_path),
+            **transcribe_kwargs,
         )
 
         duration = info.duration
@@ -113,7 +161,6 @@ class Transcriber:
                 words=words,
             ))
 
-            # Notifier la progression
             if on_progress and duration > 0:
                 progress = min(seg.end / duration, 1.0)
                 on_progress(progress)
@@ -133,4 +180,5 @@ class Transcriber:
     def unload(self) -> None:
         """Libere la memoire du modele."""
         self._model = None
+        self._actual_device = None
         logger.info("Modele Whisper decharge")

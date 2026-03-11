@@ -91,12 +91,23 @@ class MeetingSummarizer:
         """Verifie que Ollama est lance et que le modele est disponible."""
         try:
             client = self._get_client()
-            models = client.list()
+            models_response = client.list()
+
+            # Compatible avec l'ancienne API (dict) et la nouvelle (objet ListResponse)
+            if isinstance(models_response, dict):
+                model_list = models_response.get("models", [])
+            else:
+                model_list = getattr(models_response, "models", [])
+
             model_names = []
-            for m in models.get("models", []):
-                name = m.get("name", "")
+            for m in model_list:
+                if isinstance(m, dict):
+                    name = m.get("name", "") or m.get("model", "")
+                else:
+                    name = getattr(m, "model", "") or getattr(m, "name", "")
                 base_name = name.split(":")[0]
-                model_names.append(base_name)
+                if base_name:
+                    model_names.append(base_name)
 
             if self._model in model_names:
                 return True, ""
@@ -261,7 +272,7 @@ class MeetingSummarizer:
         result = ""
         response = client.chat(model=self._model, messages=messages, stream=True)
         for chunk in response:
-            token = chunk.get("message", {}).get("content", "")
+            token = self._extract_content(chunk)
             result += token
             if on_token:
                 on_token(token)
@@ -270,7 +281,19 @@ class MeetingSummarizer:
     def _get_response(self, client, messages: list) -> str:
         """Envoie une requete et retourne la reponse complete."""
         response = client.chat(model=self._model, messages=messages)
-        return response.get("message", {}).get("content", "")
+        return self._extract_content(response)
+
+    @staticmethod
+    def _extract_content(response) -> str:
+        """Extrait le contenu d'une reponse Ollama (ancienne et nouvelle API)."""
+        if isinstance(response, dict):
+            return response.get("message", {}).get("content", "")
+        msg = getattr(response, "message", None)
+        if msg is None:
+            return ""
+        if isinstance(msg, dict):
+            return msg.get("content", "")
+        return getattr(msg, "content", "")
 
     @staticmethod
     def _split_transcript(transcript: TranscriptionResult,

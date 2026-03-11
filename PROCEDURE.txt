@@ -1,0 +1,250 @@
+================================================================
+   MCC - TRANSCRIPT
+   Procedure d'installation et d'utilisation
+================================================================
+
+
+================================================================
+  PRE-REQUIS
+================================================================
+
+  - Windows 10 ou 11
+  - Connexion internet (uniquement pour l'installation)
+  - Un microphone (casque, micro USB, micro integre...)
+  - Un peripherique de sortie audio (casque, enceinte...)
+  - ~6 Go d'espace disque libre
+
+
+================================================================
+  INSTALLATION (une seule fois, ~15-30 min)
+================================================================
+
+  1. Decompresser le dossier MCC_ASSISTANTE_REDACTION
+     a un emplacement de votre choix
+     (ex: D:\MCC_ASSISTANTE_REDACTION)
+
+  2. Double-cliquer sur INSTALLER.bat
+
+     Le script fait tout automatiquement :
+       - Verifie/installe Python 3.11+
+       - Cree l'environnement virtuel Python
+       - Installe toutes les dependances
+       - Installe Ollama (LLM local)
+       - Telecharge le modele Mistral (~4 Go)
+       - Telecharge le modele Whisper (~3 Go)
+       - Cree les dossiers necessaires
+
+     NE FERMEZ PAS la fenetre pendant l'installation.
+     Attendez le message "INSTALLATION TERMINEE".
+
+  3. Si Python n'etait pas installe :
+     - Le script l'installe via winget
+     - FERMEZ la fenetre puis RELANCEZ INSTALLER.bat
+
+  4. Verifiez que tout est OK :
+     - 0 avertissement = tout est pret
+     - Si avertissements : suivez les indications affichees
+
+
+================================================================
+  LANCEMENT
+================================================================
+
+  Double-cliquer sur LANCER.bat
+
+  Le script :
+    - Demarre Ollama en arriere-plan si necessaire
+    - Lance l'application MCC - TRANSCRIPT
+
+  Ou utilisez le raccourci bureau (cree par l'installateur).
+
+
+================================================================
+  UTILISATION - ENREGISTRER UNE REUNION
+================================================================
+
+  1. VERIFIER LES PASTILLES (ecran d'accueil)
+
+     4 pastilles de statut en haut de l'ecran :
+       - Micro     : vert = micro detecte
+       - Systeme   : vert = son systeme detecte (loopback)
+       - Whisper   : vert = modele de transcription pret
+       - Ollama    : vert = LLM pret pour le compte rendu
+
+     Si une pastille est rouge, verifiez le composant concerne.
+
+  2. CHOISIR LES PERIPHERIQUES
+
+     Selectionnez dans les listes deroulantes :
+       - Microphone : votre micro (casque, USB...)
+       - Son systeme : votre peripherique de sortie
+         (le loopback capture ce que vous entendez)
+
+     Bouton "Scanner" : detecte les peripheriques avec du son
+     actif et les marque avec un triangle (>) dans la liste.
+
+  3. LANCER L'ENREGISTREMENT
+
+     a) Entrez un nom de session (ex: "Reunion projet X")
+     b) Cliquez sur le bouton Enregistrer (rouge)
+     c) Les VU-metres montrent le niveau audio en temps reel
+        - Barre du haut = votre micro
+        - Barre du bas = son systeme (les autres participants)
+     d) Lancez votre visioconference (Citadel, Tchap, Teams...)
+
+  4. TRANSCRIPTION EN DIRECT
+
+     Pendant l'enregistrement, l'application transcrit
+     automatiquement l'audio par morceaux.
+
+     Reglable dans Parametres > Transcription en direct :
+       - Intervalle : 1, 2, 3, 5 ou 10 minutes
+
+     Le decoupage se fait intelligemment : l'application
+     attend un silence naturel avant de couper, pour ne pas
+     couper un mot ou une phrase en plein milieu.
+
+     L'apercu de la transcription s'affiche en bas de
+     l'ecran d'enregistrement.
+
+  5. ARRETER L'ENREGISTREMENT
+
+     Cliquez sur le bouton Arreter.
+     Le traitement complet demarre automatiquement :
+
+       Etape 1 - Preparation audio (mixage des 2 canaux)
+       Etape 2 - Transcription complete (la plus longue)
+       Etape 3 - Identification des locuteurs (Vous / Distant)
+       Etape 4 - Generation du compte rendu par le LLM
+
+     Une barre de progression indique l'avancement.
+     Temps estime :
+       - Avec GPU : ~0.5x le temps d'enregistrement
+       - Sans GPU : ~3-5x le temps d'enregistrement
+       - Ex: 1h de reunion = ~30 min (GPU) ou ~4h (CPU)
+
+
+================================================================
+  RESULTATS
+================================================================
+
+  Apres traitement, les fichiers sont dans :
+    output/YYYY-MM-DD_HHhMM_nom_session/
+
+  Contenu :
+    - micro.wav        : enregistrement de votre micro
+    - systeme.wav      : enregistrement du son systeme
+    - mix.wav          : mixage des deux
+    - transcription.json : transcription detaillee (timestamps, mots)
+    - transcription.txt  : transcription lisible
+    - compte_rendu.md    : compte rendu structure (7 sections)
+    - compte_rendu.docx  : version Word du compte rendu
+
+  Le compte rendu contient :
+    1. Informations generales (date, duree, participants)
+    2. Ordre du jour / Sujets abordes
+    3. Synthese des echanges
+    4. Decisions prises
+    5. Actions a mener (tableau Action | Responsable | Echeance)
+    6. Points en suspens
+    7. Prochaine reunion
+
+
+================================================================
+  PARAMETRES (onglet Parametres)
+================================================================
+
+  MATERIEL
+    Bouton "Detecter" : analyse votre materiel (GPU, RAM)
+    et recommande la meilleure configuration.
+
+  TRANSCRIPTION (Whisper)
+    - Modele : large-v3 (meilleure qualite) a tiny (le plus rapide)
+    - Acceleration : auto (GPU si dispo), cuda, cpu
+    - Precision : float16 (GPU), int8 (CPU)
+    - Langue : fr par defaut
+
+  TRANSCRIPTION EN DIRECT
+    - Intervalle : tous les combien de minutes transcrire
+      pendant l'enregistrement (1 min par defaut)
+
+  COMPTE RENDU (Ollama)
+    - Modele : mistral par defaut
+    - Bouton "Tester" : verifie la connexion a Ollama
+    - Bouton "Telecharger" : telecharge un modele Ollama
+
+  APPARENCE
+    - Theme sombre ou clair
+
+  MISE A JOUR
+    - Verifie si une nouvelle version est disponible sur GitHub
+
+
+================================================================
+  RECUPERATION APRES CRASH
+================================================================
+
+  Si l'application ou le PC plante pendant un enregistrement :
+
+    - Au prochain lancement, l'application detecte la session
+      interrompue automatiquement
+    - Les fichiers WAV sont repares (en-tete corrige)
+    - Un message dans la barre de statut vous informe
+    - Vous pouvez relancer le traitement sur les fichiers recuperes
+
+
+================================================================
+  MISE A JOUR
+================================================================
+
+  Double-cliquer sur MISE_A_JOUR.bat
+
+  Ou dans l'application :
+    Parametres > Verifier les mises a jour
+
+
+================================================================
+  DEPANNAGE
+================================================================
+
+  Probleme : Pas de son systeme detecte
+    -> Verifiez que votre peripherique de sortie est configure
+       comme peripherique par defaut dans Windows
+    -> Panneau de configuration > Son > Lecture
+
+  Probleme : Ollama non detecte
+    -> Lancez "ollama serve" dans un terminal
+    -> Ou relancez LANCER.bat (il demarre Ollama)
+
+  Probleme : Transcription tres lente
+    -> Parametres > Detecter le materiel
+    -> Appliquer la recommandation
+    -> Sans GPU, utilisez le modele "medium" ou "small"
+
+  Probleme : Erreur CUDA / cublas
+    -> L'application bascule automatiquement sur CPU
+    -> Pour forcer CPU : Parametres > Acceleration > cpu
+
+  Probleme : "Modele Whisper manquant"
+    -> Relancez INSTALLER.bat
+    -> Ou : Parametres > Detecter le materiel
+
+  Probleme : Compte rendu vide ou generique
+    -> Verifiez que Ollama tourne (ollama serve)
+    -> Testez dans Parametres > Tester la connexion
+    -> Verifiez que "mistral" est installe (ollama list)
+
+
+================================================================
+  CONFIDENTIALITE
+================================================================
+
+  TOUT est 100% local. Aucune donnee ne quitte votre machine.
+
+    - Whisper tourne localement (pas de cloud)
+    - Ollama/Mistral tourne localement
+    - Les fichiers audio restent sur votre disque
+    - Aucune connexion internet necessaire apres l'installation
+      (sauf pour les mises a jour)
+
+================================================================

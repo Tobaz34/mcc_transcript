@@ -16,6 +16,7 @@ from config.constants import (
     DEFAULT_OLLAMA_HOST,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_THEME,
+    LIVE_CHUNK_INTERVAL_MIN,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,11 @@ class AppSettings:
     # Chemins
     output_directory: str = "./output"
     models_directory: str = "./models"
+    desktop_copy_enabled: bool = True
+    desktop_copy_path: str = ""  # Vide = auto-detecte
+
+    # Transcription en direct
+    live_chunk_interval_min: int = LIVE_CHUNK_INTERVAL_MIN
 
     # GUI
     theme: str = DEFAULT_THEME

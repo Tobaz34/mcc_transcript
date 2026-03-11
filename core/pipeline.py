@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from core.audio_processor import AudioProcessor
 from core.transcriber import Transcriber, TranscriptionResult
@@ -73,10 +73,10 @@ def _check_disk_space(output_dir: Path, required_mb: float = 500) -> bool:
 class ProcessingPipeline:
     """Orchestre le traitement complet post-enregistrement."""
 
-    def __init__(self, settings: AppSettings):
+    def __init__(self, settings: AppSettings, transcriber: Optional[Transcriber] = None):
         self._settings = settings
         self._processor = AudioProcessor()
-        self._transcriber = Transcriber(
+        self._transcriber = transcriber or Transcriber(
             model_size=settings.whisper_model,
             device=settings.whisper_device,
             compute_type=settings.whisper_compute_type,
@@ -94,8 +94,16 @@ class ProcessingPipeline:
     def process(self, mic_path: Path, loopback_path: Path, output_dir: Path,
                 on_status: Optional[Callable[[str, float], None]] = None,
                 on_token: Optional[Callable[[str], None]] = None,
-                skip_llm: bool = False) -> PipelineResult:
-        """Execute le pipeline complet."""
+                skip_llm: bool = False,
+                existing_transcript: Optional[TranscriptionResult] = None,
+                existing_chunk_summaries: Optional[List[str]] = None) -> PipelineResult:
+        """Execute le pipeline complet.
+
+        Args:
+            existing_transcript: Si fourni, saute la transcription Whisper.
+            existing_chunk_summaries: Si fourni, saute le resume par morceaux
+                                      et fait directement la synthese finale.
+        """
         start_time = time.time()
 
         def status(msg: str, progress: float):
@@ -106,50 +114,67 @@ class ProcessingPipeline:
         # Info sur l'enregistrement
         duration_sec = self._processor.get_wav_duration(mic_path)
         duration_min = duration_sec / 60
-        has_gpu = self._settings.whisper_device in ("cuda", "auto")
-        estimate = _estimate_processing_time(duration_sec, has_gpu)
-
-        logger.info("=== Pipeline demarre: %.0f min d'enregistrement ===", duration_min)
-        logger.info("Temps estime: %s", estimate)
-
-        status(f"Enregistrement de {duration_min:.0f} min — Temps estime: {estimate}", 0.0)
 
         # Verifier l'espace disque
         if not _check_disk_space(output_dir, required_mb=500):
             raise RuntimeError("Espace disque insuffisant (< 500 Mo libre)")
 
-        # === ETAPE 1 : Preparation audio (par morceaux, RAM limitee) ===
+        # === ETAPE 1 : Preparation audio ===
         status(f"Preparation audio ({duration_min:.0f} min)...", 0.02)
         mixed_path = output_dir / "mix.wav"
         self._processor.mix_to_mono(mic_path, loopback_path, mixed_path)
         gc.collect()
 
-        # === ETAPE 2 : Chargement du modele Whisper ===
-        if not self._transcriber.is_loaded:
-            status("Chargement du modele Whisper (premiere utilisation)...", 0.08)
-            self._transcriber.load_model()
+        if existing_transcript and len(existing_transcript.segments) > 0:
+            # === MODE RAPIDE : utiliser la transcription en direct ===
+            logger.info("=== Pipeline rapide: %d segments deja transcrits ===",
+                        len(existing_transcript.segments))
+            status("Utilisation de la transcription en direct...", 0.60)
+            transcript = existing_transcript
+            # S'assurer que la duree est correcte
+            if transcript.duration <= 0:
+                transcript = TranscriptionResult(
+                    language=transcript.language,
+                    segments=transcript.segments,
+                    duration=duration_sec,
+                )
+            n_segments = len(transcript.segments)
+            logger.info("Transcription live: %d segments, %.0f min", n_segments, duration_min)
+        else:
+            # === MODE COMPLET : transcription Whisper ===
+            has_gpu = self._settings.whisper_device in ("cuda", "auto")
+            estimate = _estimate_processing_time(duration_sec, has_gpu)
 
-        # === ETAPE 3 : Transcription (etape la plus longue) ===
-        status(f"Transcription en cours ({duration_min:.0f} min d'audio)...", 0.12)
+            logger.info("=== Pipeline complet: %.0f min d'enregistrement ===", duration_min)
+            logger.info("Temps estime: %s", estimate)
+            status(f"Enregistrement de {duration_min:.0f} min — Temps estime: {estimate}", 0.0)
 
-        def on_transcribe_progress(p: float):
-            elapsed = time.time() - start_time
-            if p > 0.05:
-                eta_total = elapsed / (0.12 + p * 0.48)
-                eta_remaining = eta_total - elapsed
-                eta_min = int(eta_remaining / 60)
-                status(f"Transcription... {p*100:.0f}% (~{eta_min} min restantes)", 0.12 + p * 0.48)
-            else:
-                status(f"Transcription... {p*100:.0f}%", 0.12 + p * 0.48)
+            # Chargement du modele Whisper
+            if not self._transcriber.is_loaded:
+                status("Chargement du modele Whisper (premiere utilisation)...", 0.08)
+                self._transcriber.load_model()
 
-        transcript = self._transcriber.transcribe(
-            mixed_path,
-            language=self._settings.language,
-            on_progress=on_transcribe_progress,
-        )
+            # Transcription (etape la plus longue)
+            status(f"Transcription en cours ({duration_min:.0f} min d'audio)...", 0.12)
 
-        n_segments = len(transcript.segments)
-        logger.info("Transcription: %d segments, %.0f min", n_segments, transcript.duration / 60)
+            def on_transcribe_progress(p: float):
+                elapsed = time.time() - start_time
+                if p > 0.05:
+                    eta_total = elapsed / (0.12 + p * 0.48)
+                    eta_remaining = eta_total - elapsed
+                    eta_min = int(eta_remaining / 60)
+                    status(f"Transcription... {p*100:.0f}% (~{eta_min} min restantes)", 0.12 + p * 0.48)
+                else:
+                    status(f"Transcription... {p*100:.0f}%", 0.12 + p * 0.48)
+
+            transcript = self._transcriber.transcribe(
+                mixed_path,
+                language=self._settings.language,
+                on_progress=on_transcribe_progress,
+            )
+
+            n_segments = len(transcript.segments)
+            logger.info("Transcription: %d segments, %.0f min", n_segments, transcript.duration / 60)
 
         # === ETAPE 4 : Diarisation ===
         status(f"Identification des locuteurs ({n_segments} segments)...", 0.62)
@@ -168,21 +193,46 @@ class ProcessingPipeline:
         if not skip_llm:
             available, err_msg = self._summarizer.check_available()
             if available:
-                n_chunks_est = max(1, int(transcript.duration / 600))
-                status(f"Generation du compte rendu (~{n_chunks_est} morceaux)...", 0.70)
+                if existing_chunk_summaries and len(existing_chunk_summaries) > 0:
+                    # MODE RAPIDE : resumes partiels deja faits pendant l'enregistrement
+                    logger.info("Synthese finale a partir de %d resumes existants",
+                                len(existing_chunk_summaries))
+                    status(f"Synthese finale ({len(existing_chunk_summaries)} resumes)...", 0.70)
 
-                def on_chunk_progress(current: int, total: int):
-                    chunk_progress = current / total
-                    status(f"Resume morceau {current}/{total}...",
-                           0.70 + chunk_progress * 0.15)
+                    from core.summarizer import (
+                        SUMMARY_TEMPLATE, FINAL_SYNTHESIS_TEMPLATE, SYSTEM_PROMPT,
+                    )
+                    all_summaries = "\n\n".join(existing_chunk_summaries)
+                    summary_section = SUMMARY_TEMPLATE.format(transcript_text=all_summaries)
+                    final_prompt = FINAL_SYNTHESIS_TEMPLATE.format(
+                        n_parts=len(existing_chunk_summaries),
+                        duration_min=int(transcript.duration / 60),
+                        summary_template=summary_section,
+                    )
+                    messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": final_prompt},
+                    ]
+                    client = self._summarizer._get_client()
+                    minutes_text = self._summarizer._stream_response(
+                        client, messages, on_token)
+                else:
+                    # MODE COMPLET : tout generer depuis la transcription
+                    n_chunks_est = max(1, int(transcript.duration / 600))
+                    status(f"Generation du compte rendu (~{n_chunks_est} morceaux)...", 0.70)
 
-                session_date = datetime.now().strftime("%d/%m/%Y")
-                minutes_text = self._summarizer.generate_minutes(
-                    transcript,
-                    session_date=session_date,
-                    on_token=on_token,
-                    on_chunk_progress=on_chunk_progress,
-                )
+                    def on_chunk_progress(current: int, total: int):
+                        chunk_progress = current / total
+                        status(f"Resume morceau {current}/{total}...",
+                               0.70 + chunk_progress * 0.15)
+
+                    session_date = datetime.now().strftime("%d/%m/%Y")
+                    minutes_text = self._summarizer.generate_minutes(
+                        transcript,
+                        session_date=session_date,
+                        on_token=on_token,
+                        on_chunk_progress=on_chunk_progress,
+                    )
             else:
                 logger.warning("Ollama non disponible: %s", err_msg)
                 status(f"LLM indisponible: {err_msg}", 0.70)

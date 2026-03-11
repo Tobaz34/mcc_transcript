@@ -145,6 +145,54 @@ class SettingsFrame(ctk.CTkFrame):
         self._lang_combo.set(self._settings.language)
         self._lang_combo.pack(side="left", padx=10)
 
+        # === TRANSCRIPTION EN DIRECT ===
+        self._add_section(scroll, "Transcription en direct")
+
+        chunk_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        chunk_frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(chunk_frame, text="Intervalle (min) :", width=150, anchor="w").pack(side="left")
+        self._chunk_interval = ctk.CTkComboBox(
+            chunk_frame,
+            values=["1", "2", "3", "5", "10"],
+            width=100,
+        )
+        self._chunk_interval.set(str(self._settings.live_chunk_interval_min))
+        self._chunk_interval.pack(side="left", padx=10)
+        ctk.CTkLabel(
+            chunk_frame, text="Coupe sur silence apres cet intervalle",
+            font=ctk.CTkFont(size=11), text_color="gray",
+        ).pack(side="left", padx=5)
+
+        # === CHEMINS ===
+        self._add_section(scroll, "Dossiers")
+
+        out_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        out_frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(out_frame, text="Dossier de sortie :", width=150, anchor="w").pack(side="left")
+        self._output_dir_entry = ctk.CTkEntry(out_frame, width=350)
+        self._output_dir_entry.insert(0, self._settings.output_directory)
+        self._output_dir_entry.pack(side="left", padx=5)
+        ctk.CTkButton(out_frame, text="Parcourir...", width=100,
+                       command=self._browse_output_dir).pack(side="left", padx=5)
+
+        copy_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        copy_frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(copy_frame, text="Copie Bureau :", width=150, anchor="w").pack(side="left")
+        self._desktop_copy_var = ctk.BooleanVar(value=self._settings.desktop_copy_enabled)
+        ctk.CTkCheckBox(copy_frame, text="Copier sur le Bureau apres traitement",
+                        variable=self._desktop_copy_var).pack(side="left", padx=5)
+
+        desktop_path_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        desktop_path_frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(desktop_path_frame, text="Chemin Bureau :", width=150, anchor="w").pack(side="left")
+        self._desktop_path_entry = ctk.CTkEntry(desktop_path_frame, width=350)
+        self._desktop_path_entry.insert(0, self._settings.desktop_copy_path)
+        self._desktop_path_entry.pack(side="left", padx=5)
+        ctk.CTkButton(desktop_path_frame, text="Parcourir...", width=100,
+                       command=self._browse_desktop_path).pack(side="left", padx=5)
+        ctk.CTkLabel(desktop_path_frame, text="(vide = auto-detecte)",
+                     font=ctk.CTkFont(size=10), text_color="gray").pack(side="left", padx=5)
+
         # === LLM ===
         self._add_section(scroll, "Compte Rendu (Ollama)")
 
@@ -274,6 +322,20 @@ class SettingsFrame(ctk.CTkFrame):
         self._device_combo.set(rec.whisper_device)
         self._compute_combo.set(rec.whisper_compute_type)
         self._on_model_changed(rec.whisper_model)
+
+    def _browse_output_dir(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Choisir le dossier de sortie")
+        if path:
+            self._output_dir_entry.delete(0, "end")
+            self._output_dir_entry.insert(0, path)
+
+    def _browse_desktop_path(self):
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="Choisir le dossier de copie")
+        if path:
+            self._desktop_path_entry.delete(0, "end")
+            self._desktop_path_entry.insert(0, path)
 
     def _refresh_devices(self):
         self._device_manager.terminate()
@@ -460,6 +522,18 @@ class SettingsFrame(ctk.CTkFrame):
         self._settings.ollama_model = self._ollama_model.get().strip()
         self._settings.ollama_host = self._ollama_host.get().strip()
         self._settings.theme = self._theme_combo.get()
+
+        # Chemins
+        output_dir = self._output_dir_entry.get().strip()
+        if output_dir:
+            self._settings.output_directory = output_dir
+        self._settings.desktop_copy_enabled = self._desktop_copy_var.get()
+        self._settings.desktop_copy_path = self._desktop_path_entry.get().strip()
+
+        try:
+            self._settings.live_chunk_interval_min = max(1, int(self._chunk_interval.get()))
+        except (ValueError, TypeError):
+            self._settings.live_chunk_interval_min = 1
 
         if self._on_save:
             self._on_save(self._settings)

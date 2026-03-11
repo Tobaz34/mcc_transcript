@@ -75,8 +75,23 @@ def check_ollama():
     try:
         import ollama
         client = ollama.Client()
-        models = client.list()
-        model_names = [m.get("name", "").split(":")[0] for m in models.get("models", [])]
+        models_response = client.list()
+
+        # Compatible avec l'ancienne API (dict) et la nouvelle (objet ListResponse)
+        if isinstance(models_response, dict):
+            model_list = models_response.get("models", [])
+        else:
+            model_list = getattr(models_response, "models", [])
+
+        model_names = []
+        for m in model_list:
+            if isinstance(m, dict):
+                name = m.get("name", "") or m.get("model", "")
+            else:
+                name = getattr(m, "model", "") or getattr(m, "name", "")
+            base_name = name.split(":")[0]
+            if base_name:
+                model_names.append(base_name)
 
         if model_names:
             print(f"  Modeles disponibles: {', '.join(model_names)}")

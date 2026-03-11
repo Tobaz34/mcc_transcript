@@ -10,6 +10,7 @@ AUDIO_FORMAT_BITS = 16
 # Niveaux audio (pour VU-metres)
 LEVEL_UPDATE_INTERVAL_MS = 50
 TIMER_UPDATE_INTERVAL_MS = 1000
+LIVE_CHUNK_INTERVAL_MIN = 1  # Transcription en direct par defaut: toutes les 1 min
 
 # Diarisation
 DEFAULT_VAD_THRESHOLD = 0.03
