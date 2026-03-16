@@ -401,9 +401,12 @@ class MeetingAssistantApp(ctk.CTk):
         if self._shared_transcriber is not None or self._transcriber_loading:
             return
         self._transcriber_loading = True
+        self._msg_queue.put(("live_status", "Chargement du modele Whisper..."))
 
         def worker():
             try:
+                import time as _time
+                t0 = _time.time()
                 t = Transcriber(
                     model_size=self._settings.whisper_model,
                     device=self._settings.whisper_device,
@@ -411,11 +414,16 @@ class MeetingAssistantApp(ctk.CTk):
                     models_dir=self._settings.models_directory,
                 )
                 t.load_model()
+                elapsed = _time.time() - t0
                 self._shared_transcriber = t
-                logger.info("Modele Whisper charge pour transcription en direct")
+                device_info = t._actual_device or "inconnu"
+                logger.info("Modele Whisper charge en %.1fs sur %s", elapsed, device_info)
                 self.after(0, lambda: self._frames["record"].set_indicator("whisper", True))
+                self._msg_queue.put(("live_status",
+                    f"Whisper pret ({device_info}, {elapsed:.0f}s)"))
             except Exception as e:
                 logger.error("Echec chargement Whisper: %s", e)
+                self._msg_queue.put(("live_status", f"Erreur Whisper: {str(e)[:60]}"))
             finally:
                 self._transcriber_loading = False
 
@@ -434,7 +442,8 @@ class MeetingAssistantApp(ctk.CTk):
             self.after(10000, self._do_live_transcription)
             return
         if self._shared_transcriber is None or not self._shared_transcriber.is_loaded:
-            self.after(30000, self._do_live_transcription)
+            # Modele pas encore charge, reessayer dans 5s
+            self.after(5000, self._do_live_transcription)
             return
 
         # Attendre un silence avant de couper

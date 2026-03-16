@@ -9,6 +9,18 @@ from pathlib import Path
 APP_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(APP_DIR))
 
+# Ajouter les DLLs CUDA (nvidia-cublas, nvidia-cudnn) au PATH
+# Necessaire car CTranslate2 cherche cublas64_12.dll dans le PATH systeme
+_site_packages = APP_DIR / "venv" / "Lib" / "site-packages"
+for _nvidia_lib in ("nvidia/cublas/bin", "nvidia/cudnn/bin", "nvidia/cuda_runtime/bin"):
+    _dll_dir = _site_packages / _nvidia_lib
+    if _dll_dir.exists():
+        os.environ["PATH"] = str(_dll_dir) + os.pathsep + os.environ.get("PATH", "")
+        try:
+            os.add_dll_directory(str(_dll_dir))
+        except (OSError, AttributeError):
+            pass
+
 
 def setup_logging():
     """Configure le logging de l'application."""

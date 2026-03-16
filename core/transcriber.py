@@ -47,6 +47,15 @@ class Transcriber:
     # Ordre de fallback si le compute_type demande n'est pas supporte
     _CUDA_COMPUTE_FALLBACKS = ["float16", "int8", "float32"]
 
+    # Erreurs CUDA fatales : inutile de retenter avec un autre compute_type
+    _CUDA_FATAL_KEYWORDS = ["cublas", "cudnn", "cudart", "not found", "cannot be loaded",
+                            "no cuda", "cuda driver"]
+
+    def _is_cuda_fatal(self, error: Exception) -> bool:
+        """Detecte si l'erreur CUDA est fatale (DLL manquante, driver absent)."""
+        err_str = str(error).lower()
+        return any(kw in err_str for kw in self._CUDA_FATAL_KEYWORDS)
+
     def _try_load_cuda(self, compute_type: str):
         """Tente de charger le modele sur CUDA avec le compute_type donne."""
         from faster_whisper import WhisperModel
@@ -88,6 +97,10 @@ class Transcriber:
                     return
                 except Exception as e:
                     logger.info("CUDA avec %s echoue (%s), essai suivant...", ct, e)
+                    # Si erreur fatale (DLL manquante), inutile de retenter CUDA
+                    if self._is_cuda_fatal(e):
+                        logger.warning("Erreur CUDA fatale detectee, passage direct en CPU")
+                        break
 
             if self._device == "cuda":
                 logger.warning("Tous les compute_type CUDA ont echoue, fallback CPU")

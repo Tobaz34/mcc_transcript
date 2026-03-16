@@ -6,6 +6,10 @@ scipy>=1.10.0
 # Transcription
 faster-whisper>=1.0.0
 
+# CUDA runtime (necessaire pour GPU NVIDIA, ignore sur CPU)
+nvidia-cublas-cu12>=12.1.0
+nvidia-cudnn-cu12>=9.1.0
+
 # LLM integration
 ollama>=0.3.0
 
