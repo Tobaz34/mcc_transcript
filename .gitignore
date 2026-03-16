@@ -7,6 +7,9 @@ venv/
 # Models (too large for git)
 models/
 
+# User settings (device-specific)
+config/settings.json
+
 # Output data
 output/
 

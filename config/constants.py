@@ -25,7 +25,7 @@ CHUNK_OVERLAP_SECONDS = 30
 
 # Application
 APP_NAME = "MCC - TRANSCRIPT"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 # Mise a jour (remplacer par votre URL GitHub)
 GITHUB_REPO = "Tobaz34/mcc_transcript"

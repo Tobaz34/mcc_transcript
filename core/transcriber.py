@@ -44,32 +44,56 @@ class Transcriber:
         self._model = None
         self._actual_device = None
 
+    # Ordre de fallback si le compute_type demande n'est pas supporte
+    _CUDA_COMPUTE_FALLBACKS = ["float16", "int8", "float32"]
+
+    def _try_load_cuda(self, compute_type: str):
+        """Tente de charger le modele sur CUDA avec le compute_type donne."""
+        from faster_whisper import WhisperModel
+        import numpy as np
+
+        model = WhisperModel(
+            self._model_size,
+            device="cuda",
+            compute_type=compute_type,
+            download_root=self._models_dir,
+        )
+        # Test rapide pour verifier que CUDA fonctionne vraiment
+        test_audio = np.zeros(16000, dtype=np.float32)
+        list(model.transcribe(test_audio, language="fr")[0])
+        return model
+
     def load_model(self) -> None:
         """Charge le modele faster-whisper."""
         from faster_whisper import WhisperModel
 
-        if self._device == "auto":
-            # Tenter CUDA d'abord, fallback sur CPU
-            try:
-                model = WhisperModel(
-                    self._model_size,
-                    device="cuda",
-                    compute_type=self._compute_type,
-                    download_root=self._models_dir,
-                )
-                # Test rapide pour verifier que CUDA fonctionne vraiment
-                import numpy as np
-                test_audio = np.zeros(16000, dtype=np.float32)
-                list(model.transcribe(test_audio, language="fr")[0])
-                self._model = model
-                self._actual_device = "cuda"
-                logger.info("Modele Whisper %s charge sur GPU (CUDA)", self._model_size)
-                return
-            except Exception as e:
-                logger.info("CUDA non disponible (%s), fallback sur CPU", e)
+        if self._device == "auto" or self._device == "cuda":
+            # Essayer le compute_type demande, puis les fallbacks
+            types_to_try = [self._compute_type]
+            for fb in self._CUDA_COMPUTE_FALLBACKS:
+                if fb not in types_to_try:
+                    types_to_try.append(fb)
 
-        device = "cpu" if self._device == "auto" else self._device
-        compute = "int8" if device == "cpu" else self._compute_type
+            for ct in types_to_try:
+                try:
+                    self._model = self._try_load_cuda(ct)
+                    self._actual_device = "cuda"
+                    if ct != self._compute_type:
+                        logger.warning(
+                            "compute_type '%s' non supporte, fallback sur '%s'",
+                            self._compute_type, ct,
+                        )
+                    logger.info("Modele Whisper %s charge sur GPU (CUDA, %s)",
+                                self._model_size, ct)
+                    return
+                except Exception as e:
+                    logger.info("CUDA avec %s echoue (%s), essai suivant...", ct, e)
+
+            if self._device == "cuda":
+                logger.warning("Tous les compute_type CUDA ont echoue, fallback CPU")
+
+        device = "cpu"
+        compute = "int8"
 
         self._model = WhisperModel(
             self._model_size,

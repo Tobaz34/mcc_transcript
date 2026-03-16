@@ -172,8 +172,8 @@ def recommend_model(hw: HardwareInfo) -> ModelRecommendation:
         # Mode GPU : choisir selon la VRAM
         vram = hw.vram_mb
 
-        if vram >= 6000:
-            # 6 Go+ : large-v3 confortable
+        if vram >= 8000:
+            # 8 Go+ : large-v3 en float16, confortable
             return ModelRecommendation(
                 whisper_model="large-v3",
                 whisper_device="cuda",
@@ -181,32 +181,42 @@ def recommend_model(hw: HardwareInfo) -> ModelRecommendation:
                 reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go de VRAM — qualite maximale",
                 estimated_speed="~2x temps reel (1h audio = ~30 min)",
             )
-        elif vram >= 4000:
-            # 4-6 Go : large-v3 en int8 (un peu plus lent mais ca passe)
+        elif vram >= 6000:
+            # 6-8 Go : large-v3 en int8 (moins de VRAM ~3-4 Go)
             return ModelRecommendation(
                 whisper_model="large-v3",
                 whisper_device="cuda",
-                whisper_compute_type="int8_float16",
-                reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go — large-v3 en precision reduite",
-                estimated_speed="~1.5x temps reel (1h audio = ~40 min)",
+                whisper_compute_type="int8",
+                reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go — large-v3 en int8",
+                estimated_speed="~2x temps reel (1h audio = ~30 min)",
             )
-        elif vram >= 2000:
-            # 2-4 Go : medium
+        elif vram >= 3000:
+            # 3-6 Go (Quadro P600 4 Go, GTX 1050 Ti, etc.)
+            # int8 pour tenir en VRAM, medium pour la securite
             return ModelRecommendation(
                 whisper_model="medium",
                 whisper_device="cuda",
-                whisper_compute_type="float16",
-                reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go — medium pour la VRAM limitee",
-                estimated_speed="~4x temps reel (1h audio = ~15 min)",
+                whisper_compute_type="int8",
+                reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go — medium en int8 (VRAM limitee)",
+                estimated_speed="~3x temps reel (1h audio = ~20 min)",
             )
-        else:
-            # <2 Go : small sur GPU
+        elif vram >= 2000:
+            # 2-3 Go : small en int8
             return ModelRecommendation(
                 whisper_model="small",
                 whisper_device="cuda",
-                whisper_compute_type="float16",
-                reason=f"GPU {hw.gpu.name} — VRAM limitee, modele small",
-                estimated_speed="~8x temps reel (1h audio = ~8 min)",
+                whisper_compute_type="int8",
+                reason=f"GPU {hw.gpu.name} avec {vram // 1024} Go — small pour la VRAM limitee",
+                estimated_speed="~6x temps reel (1h audio = ~10 min)",
+            )
+        else:
+            # <2 Go : base sur GPU
+            return ModelRecommendation(
+                whisper_model="base",
+                whisper_device="cuda",
+                whisper_compute_type="int8",
+                reason=f"GPU {hw.gpu.name} — VRAM tres limitee, modele base",
+                estimated_speed="~10x temps reel (1h audio = ~6 min)",
             )
     else:
         # Mode CPU : choisir selon la RAM

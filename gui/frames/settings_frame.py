@@ -130,7 +130,7 @@ class SettingsFrame(ctk.CTkFrame):
         ctk.CTkLabel(compute_frame, text="Precision :", width=150, anchor="w").pack(side="left")
         self._compute_combo = ctk.CTkComboBox(
             compute_frame,
-            values=["float16", "int8_float16", "int8", "float32"],
+            values=["float16", "int8", "float32"],
             width=200,
         )
         self._compute_combo.set(self._settings.whisper_compute_type)
